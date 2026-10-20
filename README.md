@@ -8,16 +8,19 @@
 
 ## Скачать
 
-Два варианта, оба лежат в [Releases](https://github.com/9leywin/booktify/releases/latest) —
-выбирай, как удобнее ставить:
+Обе версии лежат в [Releases](https://github.com/9leywin/booktify/releases/latest) —
+приложение одно и то же, отличается только способ установки:
 
 | Вариант | Файл | Кому подойдёт |
 |---|---|---|
-| **Установщик** | [`Booktify-1.0.0-setup.exe`](https://github.com/9leywin/booktify/releases/latest/download/Booktify-1.0.0-setup.exe) | Обычная установка: ярлык в «Пуск», удаление через «Параметры → Приложения». 61,6 МБ |
-| **Portable** | [`Booktify-1.0.0-portable-win64.zip`](https://github.com/9leywin/booktify/releases/latest/download/Booktify-1.0.0-portable-win64.zip) | Без установки: распаковал в папку, запустил `Booktify.exe`, унёс на флешке. 33 МБ |
+| **Установщик** | `Booktify-<версия>-setup.exe` | Обычная установка: ярлык в «Пуск», удаление через «Параметры → Приложения». 61,6 МБ |
+| **Portable** | `Booktify-<версия>-portable-win64.zip` | Без установки: распаковал в папку, запустил `Booktify.exe`, унёс на флешке. 33 МБ |
 
-Контрольные суммы — [`SHA256SUMS.txt`](https://github.com/9leywin/booktify/releases/latest/download/SHA256SUMS.txt).
-Python не нужен ни в одном варианте. Обе сборки — Windows x64.
+Прямая ссылка на файл текущего релиза:
+`https://github.com/9leywin/booktify/releases/latest/download/<имя файла>`.
+
+Рядом с ними лежит `SHA256SUMS.txt` — контрольные суммы для проверки. Python не нужен
+ни в одном варианте, обе сборки — Windows x64.
 
 ## Что умеет
 
@@ -116,14 +119,31 @@ python -m PyInstaller --noconfirm --clean --distpath dist-setup booktify-install
 
 Или одной командой: `powershell -File build.ps1 -Python "C:\path\to\python.exe" -Zip`.
 
-## Релизы
+## Как выпустить новую версию
 
-GitHub Actions собирает обе версии на каждый тег `v*`:
+Сборка обеих версий одной командой (нужен Python 3.11+ и PyInstaller):
 
-- `Booktify-<версия>-portable-win64.zip`
-- `Booktify-<версия>-setup.exe`
+```powershell
+powershell -File make-release.ps1 -Python "C:\path\to\python.exe" -Version 1.0.1
+```
 
-Артефакты также доступны на вкладке Actions у любого запуска.
+Скрипт соберёт приложение и установщик, сложит в `release\` файлы
+`Booktify-1.0.1-setup.exe`, `Booktify-1.0.1-portable-win64.zip` и посчитает
+`SHA256SUMS.txt`.
+
+Публикация в GitHub (нужен [gh](https://cli.github.com), вход — `gh auth login`):
+
+```powershell
+gh release create v1.0.1 release\Booktify-1.0.1-setup.exe `
+  release\Booktify-1.0.1-portable-win64.zip release\SHA256SUMS.txt `
+  --title "Booktify 1.0.1" --notes "Что изменилось"
+```
+
+Без `gh` то же самое делается руками: **Releases** → **Draft a new release** →
+тег `v1.0.1` → прикрепить три файла из `release\` → **Publish release**.
+
+Автоматической сборки в GitHub Actions нет: обе версии собираются на Windows-машине
+и загружаются вручную.
 
 ## Структура
 
