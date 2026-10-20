@@ -119,32 +119,6 @@ python -m PyInstaller --noconfirm --clean --distpath dist-setup booktify-install
 
 Или одной командой: `powershell -File build.ps1 -Python "C:\path\to\python.exe" -Zip`.
 
-## Как выпустить новую версию
-
-Сборка обеих версий одной командой (нужен Python 3.11+ и PyInstaller):
-
-```powershell
-powershell -File make-release.ps1 -Python "C:\path\to\python.exe" -Version 1.0.1
-```
-
-Скрипт соберёт приложение и установщик, сложит в `release\` файлы
-`Booktify-1.0.1-setup.exe`, `Booktify-1.0.1-portable-win64.zip` и посчитает
-`SHA256SUMS.txt`.
-
-Публикация в GitHub (нужен [gh](https://cli.github.com), вход — `gh auth login`):
-
-```powershell
-gh release create v1.0.1 release\Booktify-1.0.1-setup.exe `
-  release\Booktify-1.0.1-portable-win64.zip release\SHA256SUMS.txt `
-  --title "Booktify 1.0.1" --notes "Что изменилось"
-```
-
-Без `gh` то же самое делается руками: **Releases** → **Draft a new release** →
-тег `v1.0.1` → прикрепить три файла из `release\` → **Publish release**.
-
-Автоматической сборки в GitHub Actions нет: обе версии собираются на Windows-машине
-и загружаются вручную.
-
 ## Структура
 
 ```
