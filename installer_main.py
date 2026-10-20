@@ -33,8 +33,56 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "Booktify"
+APP_VERSION = "1.0.1"
 APP_EXE = "Booktify.exe"
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Booktify"
+
+
+class InstalledApp:
+    def __init__(self, path: str, version: str = "", from_registry: bool = False):
+        self.path = path
+        self.version = version
+        self.from_registry = from_registry
+
+
+def read_installed() -> InstalledApp | None:
+    """Ищет предыдущую установку: сначала в реестре, потом по папке по умолчанию."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
+            path, _ = winreg.QueryValueEx(key, "InstallLocation")
+            try:
+                version, _ = winreg.QueryValueEx(key, "DisplayVersion")
+            except OSError:
+                version = ""
+            if path and os.path.isdir(path):
+                return InstalledApp(path, version, True)
+    except OSError:
+        pass
+
+    default = default_target()
+    if os.path.exists(os.path.join(default, APP_EXE)):
+        return InstalledApp(default, "", False)
+    return None
+
+
+def app_is_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {APP_EXE}", "/NH"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return APP_EXE.lower() in (result.stdout or "").lower()
+    except Exception:
+        return False
+
+
+def close_running_app() -> bool:
+    try:
+        subprocess.run(["taskkill", "/IM", APP_EXE, "/F"], capture_output=True, timeout=20)
+        return True
+    except Exception:
+        return False
+
 
 
 def resource(*parts: str) -> str:
@@ -124,7 +172,26 @@ def install(target: str, desktop_shortcut: bool, progress=None) -> None:
     if not os.path.isdir(source):
         raise RuntimeError("в установщике нет файлов приложения")
 
+    if app_is_running():
+        close_running_app()
+        import time
+
+        time.sleep(1.0)
+
     os.makedirs(target, exist_ok=True)
+
+    # Старую _internal отодвигаем: если копирование сорвётся, вернём на место.
+    internal = os.path.join(target, "_internal")
+    backup = internal + ".old"
+    if os.path.isdir(backup):
+        shutil.rmtree(backup, ignore_errors=True)
+    moved_away = False
+    if os.path.isdir(internal):
+        try:
+            os.replace(internal, backup)
+            moved_away = True
+        except OSError:
+            shutil.rmtree(internal, ignore_errors=True)
 
     files: list[tuple[str, str]] = []
     for root, _dirs, names in os.walk(source):
@@ -134,11 +201,19 @@ def install(target: str, desktop_shortcut: bool, progress=None) -> None:
             files.append((src, os.path.join(target, rel)))
 
     total = max(1, len(files))
-    for index, (src, dst) in enumerate(files, start=1):
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copy2(src, dst)
-        if progress:
-            progress(index, total)
+    try:
+        for index, (src, dst) in enumerate(files, start=1):
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            if progress:
+                progress(index, total)
+    except Exception:
+        if moved_away:
+            shutil.rmtree(internal, ignore_errors=True)
+            os.replace(backup, internal)
+        raise
+    else:
+        shutil.rmtree(backup, ignore_errors=True)
 
     exe = os.path.join(target, APP_EXE)
     if not os.path.exists(exe):
@@ -155,7 +230,7 @@ def install(target: str, desktop_shortcut: bool, progress=None) -> None:
         make_shortcut(os.path.join(desktop, f"{APP_NAME}.lnk"), exe)
 
     try:
-        register_uninstall(target, uninstaller)
+        register_uninstall(target, uninstaller, APP_VERSION)
     except OSError:
         # Нет прав на HKCU — установка всё равно рабочая.
         pass
@@ -183,7 +258,12 @@ class InstallThread(QThread):
 class SetupWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"Установка {APP_NAME}")
+        self.installed = read_installed()
+        self.is_update = self.installed is not None
+
+        self.setWindowTitle(
+            f"Обновление {APP_NAME}" if self.is_update else f"Установка {APP_NAME}"
+        )
         self.setWindowIcon(QIcon(resource("assets", "icon.png")))
         self.setMinimumWidth(560)
         self._thread: InstallThread | None = None
@@ -196,14 +276,21 @@ class SetupWindow(QWidget):
         title.setObjectName("H1")
         layout.addWidget(title)
 
-        subtitle = QLabel("Переводчик книг с английского на русский")
+        if self.is_update:
+            old = self.installed.version or "неизвестна"
+            subtitle_text = f"Обновление: {old} → {APP_VERSION}. Все настройки сохранятся."
+        else:
+            subtitle_text = "Переводчик книг с английского на русский"
+        subtitle = QLabel(subtitle_text)
         subtitle.setObjectName("Subtitle")
+        subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         layout.addSpacing(8)
         layout.addWidget(QLabel("Куда установить"))
         row = QHBoxLayout()
-        self.path = QLineEdit(default_target())
+        start_path = self.installed.path if self.installed else default_target()
+        self.path = QLineEdit(start_path)
         row.addWidget(self.path, stretch=1)
         browse = QPushButton("Выбрать…")
         browse.clicked.connect(self._browse)
@@ -211,7 +298,7 @@ class SetupWindow(QWidget):
         layout.addLayout(row)
 
         self.desktop = QCheckBox("Создать ярлык на рабочем столе")
-        self.desktop.setChecked(True)
+        self.desktop.setChecked(not self.is_update)
         layout.addWidget(self.desktop)
 
         self.status = QLabel("")
@@ -229,7 +316,7 @@ class SetupWindow(QWidget):
         self.close_button = QPushButton("Отмена")
         self.close_button.clicked.connect(self.close)
         buttons.addWidget(self.close_button)
-        self.install_button = QPushButton("Установить")
+        self.install_button = QPushButton("Обновить" if self.is_update else "Установить")
         self.install_button.setObjectName("Primary")
         self.install_button.clicked.connect(self._install)
         buttons.addWidget(self.install_button)
@@ -245,6 +332,15 @@ class SetupWindow(QWidget):
         if not target:
             QMessageBox.warning(self, "Нужна папка", "Выбери папку для установки.")
             return
+        if app_is_running():
+            answer = QMessageBox.question(
+                self,
+                "Booktify запущен",
+                "Чтобы обновить файлы, приложение нужно закрыть. Закрыть и продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
         self.install_button.setEnabled(False)
         self.bar.setVisible(True)
         self.status.setText("Копируем файлы…")
@@ -260,7 +356,8 @@ class SetupWindow(QWidget):
         self.bar.setValue(done)
 
     def _done(self) -> None:
-        self.status.setText("Готово. Booktify установлен.")
+        action = "обновлён до" if self.is_update else "установлен"
+        self.status.setText(f"Готово. Booktify {action} {APP_VERSION}.")
         self.bar.setValue(self.bar.maximum())
         self.install_button.setText("Запустить Booktify")
         self.install_button.setEnabled(True)
@@ -276,16 +373,21 @@ class SetupWindow(QWidget):
         self.install_button.setEnabled(True)
         self.bar.setVisible(False)
         self.status.setText("")
-        QMessageBox.critical(self, "Установка не удалась", message)
+        hint = ""
+        if "Booktify.exe" in message or "Permission" in message:
+            hint = "\n\nЗакрой Booktify и попробуй ещё раз."
+        QMessageBox.critical(self, "Установка не удалась", message + hint)
 
 
 def silent_install(target: str, desktop: bool) -> int:
+    existed = os.path.exists(os.path.join(target, APP_EXE))
     try:
         install(target, desktop)
     except Exception as exc:  # noqa: BLE001
         print(f"install failed: {exc}", file=sys.stderr)
         return 1
-    print(f"installed: {target}")
+    action = "updated" if existed else "installed"
+    print(f"{action}: {target} ({APP_VERSION})")
     return 0
 
 
@@ -310,12 +412,16 @@ QCheckBox::indicator:checked { background: #2F6FED; border-color: #2F6FED; }
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--silent", action="store_true")
-    parser.add_argument("--target", default=default_target())
+    parser.add_argument("--target", default=None)
     parser.add_argument("--no-desktop", action="store_true")
     args, _ = parser.parse_known_args()
 
     if args.silent:
-        return silent_install(args.target, not args.no_desktop)
+        target = args.target
+        if not target:
+            installed = read_installed()
+            target = installed.path if installed else default_target()
+        return silent_install(target, not args.no_desktop)
 
     app = QApplication(sys.argv)
     app.setApplicationName(f"{APP_NAME} Setup")
