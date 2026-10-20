@@ -1,79 +1,63 @@
 # Как выложить Booktify на GitHub
 
-Сборки и репозиторий готовы. Осталось создать репозиторий и загрузить файлы —
-это делается один раз, дальше обновления уходят одной командой.
+Репозиторий `9leywin/booktify` создан и связан с локальной папкой. Ниже — как
+отправить новую версию и оформить релиз.
 
 ## Что уже готово
 
-- `release\Booktify-1.0.1-setup.exe` — установщик (61,6 МБ)
-- `release\Booktify-1.0.1-portable-win64.zip` — portable-версия (33 МБ)
-- `release\SHA256SUMS.txt` — контрольные суммы
-- README, LICENSE (MIT), CHANGELOG, `.gitignore`
-- `.github/workflows/build.yml` — CI собирает обе версии на тег `v*`
+- коммит с изменениями версии и тег `v1.0.1`;
+- файлы для релиза в `release\`:
+  - `Booktify-1.0.1-setup.exe` (61,6 МБ)
+  - `Booktify-1.0.1-portable-win64.zip` (33 МБ)
+  - `SHA256SUMS.txt`
 
-## Шаг 1. Поставить Git
-
-```powershell
-winget install --id Git.Git -e --source winget
-```
-
-После установки закрой и открой PowerShell заново. Проверка: `git --version`.
-
-## Шаг 2. Создать репозиторий на GitHub
-
-На сайте GitHub: **New repository** → имя `booktify` → **Public** или **Private** →
-**не** добавляй README, .gitignore и лицензию (они уже есть) → **Create repository**.
-
-## Шаг 3. Залить код
-
-В папке проекта:
+## Отправить код и тег
 
 ```powershell
 cd C:\Users\artur\OneDrive\Documents\deepseek-harness\default-workspace\book-translator
-git init -b main
-git add .
-git commit -m "Booktify 1.0.1"
-git remote add origin https://github.com/ТВОЙ_ЛОГИН/booktify.git
-git push -u origin main
+git push origin main
+git push origin v1.0.1
 ```
 
-При первом push Git попросит войти в GitHub — откроется браузер, это нормально.
-
-Проверить, что тяжёлые папки не попали в коммит:
+Проверить, что тег ушёл:
 
 ```powershell
-git status --short
+git ls-remote --tags origin
 ```
 
-В списке не должно быть `dist`, `release`, `build`, `tests/_work`.
+## Оформить релиз
 
-## Шаг 4. Выложить сборки как релиз
+1. GitHub → репозиторий `booktify` → **Releases** → **Draft a new release**.
+2. **Choose a tag** → `v1.0.1` → заголовок `Booktify 1.0.1`.
+3. Описание (можно скопировать):
 
-1. На GitHub открой **Releases** → **Draft a new release**.
-2. Tag: `v1.0.1`, заголовок: `Booktify 1.0.1`.
-3. Прикрепи два файла из папки `release`:
-   - `Booktify-1.0.1-setup.exe`
-   - `Booktify-1.0.1-portable-win64.zip`
-4. **Publish release**.
+   ```
+   - Версия приложения в правом нижнем углу окна.
+   - Только DeepSeek, OpenAI и OpenRouter.
+   - Ключ проверяется при вставке, список моделей загружается автоматически.
+   - «Показать в папке» открывает папку с готовой книгой.
+   ```
 
-После этого CI (`.github/workflows/build.yml`) на каждый новый тег будет сам
-собирать обе версии и прикреплять их к релизу.
+4. Прикрепи два файла из `release\` и `SHA256SUMS.txt`.
+5. **Publish release**.
+
+## Собрать новую версию
+
+```powershell
+powershell -File make-release.ps1 -Python "C:\utilities\bin\python.exe" -Version 1.0.2
+```
+
+Скрипт соберёт приложение и установщик, положит файлы в `release\` и пересчитает
+контрольные суммы.
 
 ## Обновления в будущем
 
 ```powershell
 git add .
 git commit -m "что изменилось"
-git tag v1.0.1
-git push
-git push --tags
+git tag -a v1.0.2 -m "Booktify 1.0.2"
+git push origin main
+git push origin v1.0.2
 ```
 
-Тег `v1.0.1` запустит сборку и создаст релиз автоматически.
-
-## Если Git ставить не хочется
-
-Можно обойтись GitHub Desktop: **Add local repository** → выбрать папку проекта →
-**Publish repository**. Сборки всё равно прикрепляются вручную в разделе Releases,
-потому что они слишком большие для обычного коммита (33 и 61 МБ при лимите 100 МБ
-на файл — технически можно, но захламляет историю).
+Затем — новый черновик релиза и два файла из `release\`.
