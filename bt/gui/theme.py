@@ -361,4 +361,19 @@ QToolTip {{
     border: none;
     padding: 6px;
 }}
+
+QStatusBar {{
+    background: transparent;
+    border: none;
+}}
+
+QStatusBar::item {{
+    border: none;
+}}
+
+QLabel#Version {{
+    color: {MUTED};
+    padding: 2px 10px;
+    font-size: 12px;
+}}
 """

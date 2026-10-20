@@ -121,7 +121,7 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertEqual(page.ring._value, 85)
         self.assertIn("Вычитываем", page.stage.text())
 
-    def test_show_folder_uses_explorer(self) -> None:
+    def test_show_folder_opens_the_book_folder(self) -> None:
         from unittest import mock
 
         from bt.gui.worker import RunOutcome
@@ -130,11 +130,9 @@ class GuiSmokeTest(unittest.TestCase):
                              seconds=1, chunks=1, cached=0, failed=0)
         self.window.outcome = outcome
         with mock.patch("bt.diagnostics.integrity_level", return_value="medium"), \
-                mock.patch("subprocess.Popen") as popen:
+                mock.patch("os.startfile") as startfile:
             self.window._show_result_folder()
-        args = popen.call_args[0][0]
-        self.assertEqual(args[0], "explorer")
-        self.assertIn("/select,", args[1])
+        startfile.assert_called_once_with(self.dir)
 
     def test_low_integrity_does_not_spawn_explorer(self) -> None:
         from unittest import mock
@@ -180,11 +178,32 @@ class GuiSmokeTest(unittest.TestCase):
         dialog = SettingsDialog(Settings(), self.window)
         self.assertEqual(dialog.theme.currentData(), "system")
         self.assertFalse(hasattr(dialog, "jobs"))
+        self.assertFalse(hasattr(dialog, "model_hint"))
+        self.assertEqual(dialog.provider.count(), 3)
+        self.assertIn("DeepSeek", [dialog.provider.itemText(i) for i in range(3)])
 
         dialog.theme.setCurrentIndex(2)
         self.assertEqual(dialog.theme.currentData(), "dark")
-        self.assertIn("deepseek-flash", dialog.model_hint.text())
         dialog.close()
+
+    def test_models_fill_combo_after_key_check(self) -> None:
+        from bt.gui.app import SettingsDialog
+
+        dialog = SettingsDialog(Settings(), self.window)
+        dialog.model.setCurrentText("deepseek-flash")
+        dialog._models_loaded(["deepseek-flash", "deepseek-v4-pro", "other-model"])
+        self.assertEqual(dialog.model.count(), 3)
+        self.assertEqual(dialog.model.currentText(), "deepseek-flash")
+        self.assertIn("Ключ работает", dialog.key_status.text())
+        dialog.close()
+
+    def test_version_is_shown_in_status_bar(self) -> None:
+        from PySide6.QtWidgets import QLabel
+
+        from bt import __version__
+
+        labels = self.window.statusBar().findChildren(QLabel)
+        self.assertTrue(any(__version__ in label.text() for label in labels))
 
     def test_plural(self) -> None:
         from bt.gui.app import plural

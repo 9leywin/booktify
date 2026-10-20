@@ -103,7 +103,7 @@ Start-Process powershell -ArgumentList '-NoProfile','-Command',"Start-Sleep -Sec
     return path
 
 
-def register_uninstall(target: str, uninstaller: str, version: str = "1.0.0") -> None:
+def register_uninstall(target: str, uninstaller: str, version: str = "1.0.1") -> None:
     exe = os.path.join(target, APP_EXE)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as key:
         winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_NAME)

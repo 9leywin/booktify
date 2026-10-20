@@ -18,16 +18,12 @@ PROVIDERS = {
     "DeepSeek": "https://api.deepseek.com",
     "OpenAI": "https://api.openai.com/v1",
     "OpenRouter": "https://openrouter.ai/api/v1",
-    "LM Studio (локально)": "http://localhost:1234/v1",
-    "Другой адрес": "",
 }
 
 MODELS = {
     "DeepSeek": ["deepseek-flash", "deepseek-v4-pro"],
-    "OpenAI": ["gpt-4o-mini", "gpt-4o"],
+    "OpenAI": ["gpt-4o", "gpt-4o-mini"],
     "OpenRouter": ["deepseek/deepseek-chat", "openai/gpt-4o-mini"],
-    "LM Studio (локально)": ["local-model"],
-    "Другой адрес": ["model"],
 }
 
 QUALITY = {

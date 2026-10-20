@@ -29,16 +29,17 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QStackedWidget,
+    QStatusBar,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import applog, diagnostics
+from .. import __version__, applog, diagnostics
 from ..config import MODELS, PROVIDERS, QUALITY, Settings, config_dir
 from ..model import Book
 from . import theme
 from .widgets import CoverView, DropZone, ProgressRing, RecentsPanel, human_size
-from .worker import ImportWorker, RunOutcome, RunWorker, default_cache_dir
+from .worker import ImportWorker, ModelsWorker, RunOutcome, RunWorker, default_cache_dir
 
 def resource_path(*parts: str) -> str:
     """Файл рядом с приложением: в сборке — во временном каталоге PyInstaller."""
@@ -479,6 +480,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self._models_worker: ModelsWorker | None = None
         self.setWindowTitle("Настройки")
         self.setMinimumWidth(520)
 
@@ -509,20 +511,17 @@ class SettingsDialog(QDialog):
         key_row.addWidget(self.show_key)
         layout.addLayout(key_row)
 
+        self.key_status = QLabel("")
+        self.key_status.setObjectName("Stat")
+        self.key_status.setWordWrap(True)
+        layout.addWidget(self.key_status)
+
         layout.addWidget(QLabel("Модель"))
         self.model = QComboBox()
         self.model.setEditable(True)
         self.model.addItems(MODELS.get(settings.provider, ["deepseek-flash"]))
         self.model.setCurrentText(settings.model)
         layout.addWidget(self.model)
-
-        self.model_hint = QLabel(
-            "Актуальные имена: deepseek-flash (V4.1 Flash) и deepseek-v4-pro. "
-            "Имя можно вписать вручную."
-        )
-        self.model_hint.setObjectName("Stat")
-        self.model_hint.setWordWrap(True)
-        layout.addWidget(self.model_hint)
 
         layout.addWidget(QLabel("Тема оформления"))
         self.theme = QComboBox()
@@ -563,6 +562,59 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        # Ключ вставили — через полсекунды проверяем и подтягиваем модели.
+        self._key_timer = QTimer(self)
+        self._key_timer.setSingleShot(True)
+        self._key_timer.setInterval(600)
+        self._key_timer.timeout.connect(self._check_key)
+        self.api_key.textChanged.connect(self._schedule_check)
+        if settings.has_key:
+            QTimer.singleShot(200, self._check_key)
+
+    def _schedule_check(self, text: str) -> None:
+        self.key_status.setText("")
+        if len(text.strip()) >= 8:
+            self._key_timer.start()
+
+    def _check_key(self) -> None:
+        key = self.api_key.text().strip()
+        if len(key) < 8:
+            return
+        if self._models_worker is not None and self._models_worker.isRunning():
+            return
+
+        self.key_status.setText("Проверяем ключ и загружаем модели…")
+        self.model.setEnabled(False)
+        self._models_worker = ModelsWorker(self.base_url.text().strip(), key, self)
+        self._models_worker.done.connect(self._models_loaded)
+        self._models_worker.failed.connect(self._models_failed)
+        self._models_worker.start()
+
+    def _models_loaded(self, models: list[str]) -> None:
+        self.model.setEnabled(True)
+        current = self.model.currentText().strip()
+        self.model.blockSignals(True)
+        self.model.clear()
+        self.model.addItems(models)
+        if current and current not in models:
+            self.model.insertItem(0, current)
+        self.model.setCurrentText(current if current else models[0])
+        self.model.blockSignals(False)
+        self.key_status.setText(f"Ключ работает · доступно моделей: {len(models)}")
+        self.key_status.setStyleSheet(f"color: {theme.SUCCESS};")
+        self._models_worker = None
+
+    def _models_failed(self, message: str) -> None:
+        self.model.setEnabled(True)
+        self.key_status.setText(f"Не удалось проверить ключ: {message}")
+        self.key_status.setStyleSheet(f"color: {theme.DANGER};")
+        self._models_worker = None
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self._models_worker is not None and self._models_worker.isRunning():
+            self._models_worker.wait(9000)
+        super().closeEvent(event)
+
     def _provider_changed(self, name: str) -> None:
         url = PROVIDERS.get(name, "")
         if url:
@@ -571,6 +623,9 @@ class SettingsDialog(QDialog):
         self.model.clear()
         self.model.addItems(models)
         self.model.setCurrentText(models[0])
+        if self.api_key.text().strip():
+            self._key_timer.start()
+
     def _toggle_key(self, shown: bool) -> None:
         self.api_key.setEchoMode(QLineEdit.Normal if shown else QLineEdit.Password)
         self.show_key.setText("Скрыть" if shown else "Показать")
@@ -616,6 +671,12 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
+
+        self.setStatusBar(QStatusBar(self))
+        self.statusBar().setSizeGripEnabled(False)
+        version = QLabel(f"Booktify {__version__}")
+        version.setObjectName("Version")
+        self.statusBar().addPermanentWidget(version)
 
         self.home = HomePage()
         self.book_page = BookPage()
@@ -892,16 +953,12 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            import subprocess
-
-            subprocess.Popen(["explorer", f"/select,{path}"])
-        except Exception:
-            applog.log_exception("не удалось открыть проводник")
-            try:
-                os.startfile(folder)  # noqa: S606
-            except OSError as exc:
-                applog.log(f"проводник недоступен: {exc}")
-                self._show_path_help("Проводник не открылся", folder, "Файл лежит здесь.")
+            # Открываем именно папку с готовым файлом: выделение через /select
+            # ломается на очень длинных путях.
+            os.startfile(folder)  # noqa: S606
+        except OSError as exc:
+            applog.log(f"проводник недоступен: {exc}")
+            self._show_path_help("Папка с книгой", folder, "Открыть проводник не получилось.")
 
 
 def main() -> int:

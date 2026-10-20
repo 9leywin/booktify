@@ -64,6 +64,31 @@ class ImportWorker(QThread):
         self.done.emit(book)
 
 
+class ModelsWorker(QThread):
+    """Проверяет ключ и забирает список моделей у провайдера."""
+
+    done = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, base_url: str, api_key: str, parent=None):
+        super().__init__(parent)
+        self.base_url = base_url
+        self.api_key = api_key
+
+    def run(self) -> None:
+        from ..models_api import fetch_models
+
+        try:
+            models = fetch_models(self.base_url, self.api_key, timeout=8.0)
+        except PermissionError as exc:
+            self.failed.emit(str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+            return
+        self.done.emit(models)
+
+
 class GlossaryWorker(QThread):
     """Просит модель предложить, как писать имена и термины по-русски."""
 
