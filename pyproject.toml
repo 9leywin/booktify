@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "book-translator"
+version = "0.1.0"
+description = "Перевод книг с английского на русский через API модели"
+requires-python = ">=3.10"
+dependencies = [
+    "lxml>=5.0",
+    "pypdf>=4.0",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+bt = "bt.cli:main"
+bt-gui = "bt.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["bt*"]
+
+[tool.unittest]
+start-directory = "tests"

@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Локальные артефакты сборки
+build/
+build-next/
+build-setup/
+build-setup-debug/
+dist/
+dist-*/
+release/
+wheels/
+
+# Рабочие каталоги тестов и демо
+tests/_work/
+.testtmp/
+userdata/
+*.chunks.json
+demo/*
+!demo/gui/
+!demo/gui/*.png
+
+# Настройки и кэш приложения (не должны попадать в репозиторий)
+Booktify-data/
+BookTranslator-data/
+
+# ОС и редакторы
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# ��� ���������
+.bt-cache/
